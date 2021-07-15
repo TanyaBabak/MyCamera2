@@ -12,11 +12,7 @@ import android.view.Surface
 import androidx.annotation.RequiresApi
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.*
 import java.io.File
 import java.nio.ByteBuffer
 
@@ -30,7 +26,8 @@ class FrameProcessorViewModel : ViewModel(), CustomContextObserver {
     private lateinit var context: Context
     private lateinit var decoder: MediaCodec
     private lateinit var mediaFormat: MediaFormat
-    private val mutex = Mutex()
+    private var muxerVideoTrackIndex = -1
+    private lateinit var job: Job
 
 
     @RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
@@ -80,6 +77,7 @@ class FrameProcessorViewModel : ViewModel(), CustomContextObserver {
 
     @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     private fun createDecoder() {
+        Log.e("Tanya", Thread.currentThread().name)
         val mime = mediaFormat.getString(MediaFormat.KEY_MIME)
         decoder = MediaCodec.createDecoderByType(mime ?: return)
         decoder.setCallback(@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
@@ -119,7 +117,6 @@ class FrameProcessorViewModel : ViewModel(), CustomContextObserver {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR2)
     private fun passInCoder(index: Int, info: MediaCodec.BufferInfo) {
         if ((info.flags and BUFFER_FLAG_END_OF_STREAM) != 0) {
             encoder.signalEndOfInputStream()
@@ -130,7 +127,6 @@ class FrameProcessorViewModel : ViewModel(), CustomContextObserver {
                 Log.e("Tanya", Thread.currentThread().name)
             }
         }
-
     }
 
     private fun fillInputBuffer(buffer: ByteBuffer?, index: Int) {
@@ -146,19 +142,19 @@ class FrameProcessorViewModel : ViewModel(), CustomContextObserver {
     }
 
     private fun launchEncoder(width: Int, height: Int, mime: String?) {
-        viewModelScope.launch (Dispatchers.Default) {
+        viewModelScope.launch(Dispatchers.IO + CoroutineName("render")) {
+            Log.e("Tanya", Thread.currentThread().toString())
             createEncoder(width, height, mime)
             renderingContext.setupRenderingContext(context, encoderInputSurface)
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-    private fun createEncoder(width: Int, height: Int, mime: String?) {
+
+    private suspend fun createEncoder(width: Int, height: Int, mime: String?) {
         if (mime == null) {
             Log.e(TAG, "mime doesn't define")
             return
         }
-        Log.e("Tanya", Thread.currentThread().name)
         val format = MediaFormat.createVideoFormat(mime, width, height)
         format.apply {
             setInteger(
@@ -170,37 +166,48 @@ class FrameProcessorViewModel : ViewModel(), CustomContextObserver {
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERNAL)
         }
         encoder = MediaCodec.createEncoderByType(mime)
-        setCallbackCodec()
         encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        setCallbackCodec()
         encoderInputSurface = encoder.createInputSurface()
         encoder.start()
     }
 
-    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     private fun setCallbackCodec() {
-        encoder.setCallback(@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-        object : MediaCodec.Callback() {
-            override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                Log.e(TAG, "codec input buffer")
-            }
+        encoder.setCallback(
+            object : MediaCodec.Callback() {
+                override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
+                    Log.e(TAG, "codec input buffer")
+                    Log.e("Tanya", Thread.currentThread().name)
+                }
 
-            override fun onOutputBufferAvailable(
-                codec: MediaCodec,
-                index: Int,
-                info: MediaCodec.BufferInfo
-            ) {
-                Log.e(TAG, "codec output buffer")
-            }
+                override fun onOutputBufferAvailable(
+                    codec: MediaCodec,
+                    index: Int,
+                    info: MediaCodec.BufferInfo
+                ) {
+                    viewModelScope.async(Dispatchers.Default + CoroutineName("ecoder")) {
+                        Log.e(TAG, "codec output buffer")
+                        Log.d(TAG, "Encoder processing output buffer $index size ${info.size}")
+                        val outputBuffer = encoder.getOutputBuffer(index)
+                        mediaMuxer.writeSampleData(muxerVideoTrackIndex, outputBuffer!!, info)
+                        codec.releaseOutputBuffer(index, false)
+                        renderingContext.frameEncoded = true
+                    }
 
-            override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-                Log.e(TAG, "codec error")
-            }
+                }
 
-            override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
-                Log.e(TAG, "codec change")
-            }
+                override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
+                    Log.e(TAG, "codec error")
+                    Log.e("Tanya", Thread.currentThread().name)
+                }
 
-        })
+                override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
+                    Log.e(TAG, "codec change")
+                    muxerVideoTrackIndex = mediaMuxer.addTrack(format)
+                    mediaMuxer.start()
+                }
+
+            })
     }
 
 

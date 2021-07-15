@@ -6,8 +6,13 @@ import android.graphics.SurfaceTexture.OnFrameAvailableListener
 import android.opengl.*
 import android.util.Log
 import android.view.Surface
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.lang.ref.WeakReference
 import java.util.*
+import kotlin.coroutines.coroutineContext
+import kotlin.coroutines.resume
 
 class CustomContext(imageWidth: Int, imageHeight: Int) : OnFrameAvailableListener,
     ObserverSubject<CustomContextObserver?> {
@@ -29,15 +34,37 @@ class CustomContext(imageWidth: Int, imageHeight: Int) : OnFrameAvailableListene
     var frameTime: Long = 0
     private val mObservers: MutableList<WeakReference<CustomContextObserver>> = ArrayList()
 
-    fun setupRenderingContext(context: Context?, encoderInputSurface: Surface) {
-        Log.e("Tanya", Thread.currentThread().name)
+    suspend fun setupRenderingContext(context: Context?, encoderInputSurface: Surface) {
+        Log.e("Tanya", coroutineContext.toString())
         createEGLContext(encoderInputSurface)
         mTextureHandler = TextureHandler()
         mRenderer = Renderer(context)
         mSurfaceTexture = SurfaceTexture(mTextureHandler!!.texture)
         surface = Surface(mSurfaceTexture)
-        mSurfaceTexture!!.setOnFrameAvailableListener(this)
+        setAvailableListener()
         notifySetupComplete()
+    }
+
+    private suspend fun setAvailableListener() {
+        suspendCancellableCoroutine<Boolean> { con ->
+            mSurfaceTexture!!.setOnFrameAvailableListener {
+                GlobalScope.launch {
+                    frameEncoded = false
+                    EGLExt.eglPresentationTimeANDROID(
+                        mDpy, mSurf,
+                        frameTime * 1000
+                    )
+                    it.updateTexImage()
+                    onDrawFrame()
+                    swapSurfaces()
+                    frameRendered = true
+                    con.resume(true)
+                }
+
+            }
+
+        }
+
     }
 
     private fun createEGLContext(encoderInputSurface: Surface) {
@@ -103,28 +130,7 @@ class CustomContext(imageWidth: Int, imageHeight: Int) : OnFrameAvailableListene
     }
 
     override fun onFrameAvailable(surfaceTexture: SurfaceTexture) {
-        synchronized(syncWithEncoder) {
-            while (!frameEncoded) {
-                try {
-                    syncWithEncoder.wait()
-                } catch (e: InterruptedException) {
-                    e.printStackTrace()
-                }
-            }
-            frameEncoded = false
-        }
-        Log.e("Tanya", Thread.currentThread().name)
-        EGLExt.eglPresentationTimeANDROID(
-            mDpy, mSurf,
-            frameTime * 1000
-        )
-        mSurfaceTexture!!.updateTexImage()
-        onDrawFrame()
-        swapSurfaces()
-        synchronized(syncWithDecoder) {
-            frameRendered = true
-            syncWithDecoder.notify()
-        }
+
     }
 
     private fun swapSurfaces() {

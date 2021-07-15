@@ -19,10 +19,7 @@ import androidx.navigation.Navigation
 import com.example.mycamera.constant.BundleConst
 import com.example.mycamera2.R
 import com.example.mycamera2.databinding.FragmentCameraBinding
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.InternalCoroutinesApi
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.*
 import java.io.File
 import kotlin.coroutines.resume
 
@@ -135,7 +132,6 @@ class CameraFragment : Fragment() {
                 }
             } else {
                 lifecycleScope.launch(Dispatchers.Main) {
-
                     Toast.makeText(requireActivity(), " остановили стрим", Toast.LENGTH_SHORT)
                         .show()
                     stopStreamVideo()
@@ -160,8 +156,8 @@ class CameraFragment : Fragment() {
         camera.close()
     }
 
-    fun navigate() {
-        lifecycleScope.launch(Dispatchers.Main) {
+    suspend fun navigate() {
+        withContext(Dispatchers.Main) {
             val bundle = bundleOf(BundleConst.FILE_NAME to outputFile.absolutePath)
             Navigation.findNavController(requireActivity(), R.id.fragment_camera_graph)
                 .navigate(
@@ -247,8 +243,8 @@ class CameraFragment : Fragment() {
     }
 
 
-    override fun onDestroy() {
-        super.onDestroy()
+    override fun onPause() {
+        super.onPause()
         binding = null
         cameraThread.quitSafely()
     }
