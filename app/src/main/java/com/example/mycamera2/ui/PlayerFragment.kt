@@ -2,6 +2,7 @@ package com.example.mycamera.ui
 
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -12,6 +13,7 @@ import androidx.fragment.app.Fragment
 import com.example.mycamera.constant.BundleConst
 import com.example.mycamera2.FrameProcessorViewModel
 import com.example.mycamera2.databinding.FragmentPlayerBinding
+import kotlinx.coroutines.InternalCoroutinesApi
 
 class PlayerFragment : Fragment() {
 
@@ -31,6 +33,7 @@ class PlayerFragment : Fragment() {
         return binding.root
     }
 
+    @InternalCoroutinesApi
     @RequiresApi(Build.VERSION_CODES.Q)
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -40,9 +43,15 @@ class PlayerFragment : Fragment() {
         videoView.setVideoPath(file)
         videoView.start()
         viewModel = FrameProcessorViewModel()
-        videoView.setOnCompletionListener {
-            it.start()
-        }
+            viewModel.finishCodecLiveData.observe(viewLifecycleOwner, {
+                progressBar.visibility = View.GONE
+                videoView.setVideoPath(it.absolutePath)
+                videoView.start()
+            })
+            videoView.setOnCompletionListener {
+                it.start()
+            }
+
 
         binding.redBtn.setOnClickListener {
             progressBar.bringToFront()

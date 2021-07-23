@@ -6,68 +6,86 @@ import android.graphics.SurfaceTexture.OnFrameAvailableListener
 import android.opengl.*
 import android.util.Log
 import android.view.Surface
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import java.lang.ref.WeakReference
-import java.util.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.*
 import kotlin.coroutines.coroutineContext
-import kotlin.coroutines.resume
 
-class CustomContext(imageWidth: Int, imageHeight: Int) : OnFrameAvailableListener,
-    ObserverSubject<CustomContextObserver?> {
+class CustomContext(imageWidth: Int, imageHeight: Int) {
     private var mCtx: EGLContext? = null
     private var mDpy: EGLDisplay? = null
     private var mSurf: EGLSurface? = null
-    private var mTextureHandler: TextureHandler? = null
-    private var mRenderer: Renderer? = null
+    private lateinit var mTextureHandler: TextureHandler
+    private lateinit var renderer: Renderer
     private val mImageWidth: Int
     private val mImageHeight: Int
     private var mSurfaceTexture: SurfaceTexture? = null
     var surface: Surface? = null
-        private set
     private val mTransformMatrix = FloatArray(16)
-    val syncWithDecoder = Object()
-    var frameRendered = false
-    val syncWithEncoder = Object()
-    var frameEncoded = true
     var frameTime: Long = 0
-    private val mObservers: MutableList<WeakReference<CustomContextObserver>> = ArrayList()
+    private var job: Job? = null
+    var frameRendered = false
+    var frameEncoded = true
+    private lateinit var callbackSetupDecoder: () -> Unit
 
-    suspend fun setupRenderingContext(context: Context?, encoderInputSurface: Surface) {
-        Log.e("Tanya", coroutineContext.toString())
+    @ExperimentalCoroutinesApi
+    @InternalCoroutinesApi
+    suspend fun setupRenderingContext(
+        context: Context?,
+        encoderInputSurface: Surface,
+        setupDecoder: () -> Unit
+    ) {
+        callbackSetupDecoder = setupDecoder
         createEGLContext(encoderInputSurface)
         mTextureHandler = TextureHandler()
-        mRenderer = Renderer(context)
-        mSurfaceTexture = SurfaceTexture(mTextureHandler!!.texture)
+        renderer = Renderer(context)
+        mSurfaceTexture = SurfaceTexture(mTextureHandler.texture)
         surface = Surface(mSurfaceTexture)
-        setAvailableListener()
-        notifySetupComplete()
-    }
-
-    private suspend fun setAvailableListener() {
-        suspendCancellableCoroutine<Boolean> { con ->
-            mSurfaceTexture!!.setOnFrameAvailableListener {
-                GlobalScope.launch {
-                    frameEncoded = false
-                    EGLExt.eglPresentationTimeANDROID(
-                        mDpy, mSurf,
-                        frameTime * 1000
-                    )
-                    it.updateTexImage()
-                    onDrawFrame()
-                    swapSurfaces()
-                    frameRendered = true
-                    con.resume(true)
-                }
-
+        Log.e("Tanya", Thread.currentThread().name)
+        Log.e("Tanya", "start")
+        try {
+            setAvailableListener().map {
+                EGLExt.eglPresentationTimeANDROID(
+                    mDpy, mSurf,
+                    frameTime * 1000
+                )
+                Log.e("Tanya", Thread.currentThread().name)
+                Log.e("Tanya", "listener")
+                it.updateTexImage()
+                onDrawFrame()
+                swapSurfaces()
+                Log.e("Tanya", "listener1")
+            }.collect {
+                Log.e("Tanya", "pass to encoder")
             }
-
+        }catch (e:Exception){
+            Log.e("Tanya", e.toString())
+            e.printStackTrace()
         }
 
     }
 
-    private fun createEGLContext(encoderInputSurface: Surface) {
+    @ExperimentalCoroutinesApi
+    private suspend fun setAvailableListener(): Flow<SurfaceTexture> =
+        callbackFlow {
+            val listener = OnFrameAvailableListener { surfaceTexture ->
+                launch(Dispatchers.Default) {
+                    Log.e("Tanya", Thread.currentThread().name)
+                    Log.e("Tanya", "decoder")
+                    delay(100)
+                    offer(surfaceTexture)
+                }
+            }
+            mSurfaceTexture!!.setOnFrameAvailableListener(listener)
+            callbackSetupDecoder.invoke()
+            awaitClose {
+                mSurfaceTexture!!.setOnFrameAvailableListener { null }
+            }
+        }
+
+
+        private fun createEGLContext(encoderInputSurface: Surface) {
         mDpy = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         val version = IntArray(2)
         EGL14.eglInitialize(mDpy, version, 0, version, 1)
@@ -100,20 +118,19 @@ class CustomContext(imageWidth: Int, imageHeight: Int) : OnFrameAvailableListene
 
     private fun onDrawFrame() {
         GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
-        if (mRenderer != null) {
-            mRenderer!!.onDrawFrame(
-                mTransformMatrix,
-                mTextureHandler!!.texture,
-                mImageWidth,
-                mImageHeight
-            )
-        }
+        renderer.onDrawFrame(
+            mTransformMatrix,
+            mTextureHandler.texture,
+            mImageWidth,
+            mImageHeight
+        )
     }
 
     fun release() {
-        cleanup()
-        mTextureHandler!!.cleanup()
+        renderer.cleanup()
+        mTextureHandler.cleanup()
         mSurfaceTexture!!.release()
+        job!!.cancel()
         EGL14.eglMakeCurrent(
             mDpy, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE,
             EGL14.EGL_NO_CONTEXT
@@ -124,53 +141,26 @@ class CustomContext(imageWidth: Int, imageHeight: Int) : OnFrameAvailableListene
         EGL14.eglTerminate(mDpy)
     }
 
-    private fun cleanup() {
-        if (mRenderer != null) mRenderer!!.cleanup()
-        mRenderer = null
-    }
-
-    override fun onFrameAvailable(surfaceTexture: SurfaceTexture) {
-
-    }
-
     private fun swapSurfaces() {
-        //EGLExt.eglPresentationTimeANDROID(mDpy, mSurf,
-        //      bufferInfo.presentationTimeUs * 1000)
         EGL14.eglSwapBuffers(mDpy, mSurf)
     }
 
-    private fun findWeakReference(observer: CustomContextObserver): WeakReference<CustomContextObserver>? {
-        var weakReference: WeakReference<CustomContextObserver>? = null
-        for (ref in mObservers) {
-            if (ref.get() === observer) {
-                weakReference = ref
-            }
-        }
-        return weakReference
-    }
+//    private fun findWeakReference(observer: CustomContextObserver): WeakReference<CustomContextObserver>? {
+//        var weakReference: WeakReference<CustomContextObserver>? = null
+//        for (ref in mObservers) {
+//            if (ref.get() === observer) {
+//                weakReference = ref
+//            }
+//        }
+//        return weakReference
+//    }
 
-    override fun registerObserver(observer: CustomContextObserver?) {
-        if (observer != null) {
-            val weakReference = findWeakReference(observer)
-            if (weakReference == null) mObservers.add(WeakReference(observer))
-        }
-    }
-
-    override fun removeObserver(observer: CustomContextObserver?) {
-        if (observer != null) {
-            val weakReference = findWeakReference(observer)
-            if (weakReference != null) {
-                mObservers.remove(weakReference)
-            }
-        }
-    }
-
-    private fun notifySetupComplete() {
-        for (co in mObservers) {
-            val observer = co.get()
-            observer?.setupComplete()
-        }
-    }
+//    override fun registerObserver(observer: CustomContextObserver?) {
+//        if (observer != null) {
+//            val weakReference = findWeakReference(observer)
+//            if (weakReference == null) mObservers.add(WeakReference(observer))
+//        }
+//    }
 
     companion object {
         private val TAG = CustomContext::class.java.simpleName
@@ -181,4 +171,13 @@ class CustomContext(imageWidth: Int, imageHeight: Int) : OnFrameAvailableListene
         mImageWidth = imageWidth
         mImageHeight = imageHeight
     }
+//
+//    override fun removeObserver(observer: CustomContextObserver?) {
+//        val weakReference = findWeakReference(
+//            observer!!
+//        )
+//        if (weakReference != null) {
+//            mObservers.remove(weakReference)
+//        }
+//    }
 }
