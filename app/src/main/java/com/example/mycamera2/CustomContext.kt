@@ -10,7 +10,6 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.*
-import kotlin.coroutines.coroutineContext
 
 class CustomContext(imageWidth: Int, imageHeight: Int) {
     private var mCtx: EGLContext? = null
@@ -45,21 +44,10 @@ class CustomContext(imageWidth: Int, imageHeight: Int) {
         Log.e("Tanya", Thread.currentThread().name)
         Log.e("Tanya", "start")
         try {
-            setAvailableListener().map {
-                EGLExt.eglPresentationTimeANDROID(
-                    mDpy, mSurf,
-                    frameTime * 1000
-                )
-                Log.e("Tanya", Thread.currentThread().name)
-                Log.e("Tanya", "listener")
-                it.updateTexImage()
-                onDrawFrame()
-                swapSurfaces()
-                Log.e("Tanya", "listener1")
-            }.collect {
+            setAvailableListener().buffer(Channel.UNLIMITED).shareIn(GlobalScope, SharingStarted.Eagerly).collect {
                 Log.e("Tanya", "pass to encoder")
             }
-        }catch (e:Exception){
+        } catch (e: Exception) {
             Log.e("Tanya", e.toString())
             e.printStackTrace()
         }
@@ -74,6 +62,16 @@ class CustomContext(imageWidth: Int, imageHeight: Int) {
                     Log.e("Tanya", Thread.currentThread().name)
                     Log.e("Tanya", "decoder")
                     delay(100)
+                    EGLExt.eglPresentationTimeANDROID(
+                        mDpy, mSurf,
+                        frameTime * 1000
+                    )
+                    Log.e("Tanya", Thread.currentThread().name)
+                    Log.e("Tanya", "listener")
+                    surfaceTexture.updateTexImage()
+                    onDrawFrame()
+                    swapSurfaces()
+                    Log.e("Tanya", "listener1")
                     offer(surfaceTexture)
                 }
             }
@@ -85,7 +83,7 @@ class CustomContext(imageWidth: Int, imageHeight: Int) {
         }
 
 
-        private fun createEGLContext(encoderInputSurface: Surface) {
+    private fun createEGLContext(encoderInputSurface: Surface) {
         mDpy = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         val version = IntArray(2)
         EGL14.eglInitialize(mDpy, version, 0, version, 1)

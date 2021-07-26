@@ -122,6 +122,7 @@ class FrameProcessorViewModel : ViewModel() {
         if ((info.flags and BUFFER_FLAG_END_OF_STREAM) != 0) {
             encoder.signalEndOfInputStream()
         }
+        Log.d(TAG, "processOutputBuffer $index")
         renderingContext.frameTime = info.presentationTimeUs
         decoder.releaseOutputBuffer(index, true)
 //        if (info.size != 0) {
