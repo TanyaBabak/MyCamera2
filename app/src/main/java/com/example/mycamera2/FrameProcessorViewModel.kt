@@ -13,7 +13,14 @@ import androidx.annotation.RequiresApi
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineName
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.InternalCoroutinesApi
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import java.io.File
 import java.nio.ByteBuffer
 
@@ -136,9 +143,9 @@ class FrameProcessorViewModel : ViewModel() {
 //                renderingContext.frameRendered = false
 //            }
 //        }
-        viewModelScope.launch {
-            delay(100)
-        }
+//        viewModelScope.launch {
+//            delay(100)
+//        }
     }
 
     private fun fillInputBuffer(buffer: ByteBuffer?, index: Int) {
@@ -188,43 +195,59 @@ class FrameProcessorViewModel : ViewModel() {
         encoder = MediaCodec.createEncoderByType(mime)
         encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         encoderInputSurface = encoder.createInputSurface()
-        setCallbackCodec()
+        viewModelScope.launch(Dispatchers.Default) {
+            setCallbackCodec().collect {
+                Log.e("Tanya", it.toString())
+            }
+        }
         encoder.start()
     }
 
-    private fun setCallbackCodec() {
-        encoder.setCallback(object : MediaCodec.Callback() {
-            override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-                Log.e(TAG, "codec input buffer")
-                Log.e("Tanya", Thread.currentThread().name)
-            }
+    private fun setCallbackCodec(): Flow<Int> {
+        return callbackFlow {
+            val listener = object : MediaCodec.Callback() {
+                override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
+                    Log.e(TAG, "codec input buffer")
+                    Log.e("Tanya", Thread.currentThread().name)
+                }
 
-            override fun onOutputBufferAvailable(
-                codec: MediaCodec,
-                index: Int,
-                info: MediaCodec.BufferInfo
-            ) {
-                Log.d(TAG, "Encoder processing output buffer $index size ${info.size}")
-                val outputBuffer = encoder.getOutputBuffer(index)
-                mediaMuxer.writeSampleData(muxerVideoTrackIndex, outputBuffer!!, info)
-                codec.releaseOutputBuffer(index, false)
-                if (info.size == null) {
-                    stop()
-                    finishCodecLiveData.postValue(outputFile)
+                override fun onOutputBufferAvailable(
+                    codec: MediaCodec,
+                    index: Int,
+                    info: MediaCodec.BufferInfo
+                ) {
+                    viewModelScope.launch(Dispatchers.Default) {
+                        Log.e("Tanya", Thread.currentThread().name)
+                        Log.d(TAG, "Encoder processing output buffer $index size ${info.size}")
+                        val outputBuffer = encoder.getOutputBuffer(index)
+                        mediaMuxer.writeSampleData(muxerVideoTrackIndex, outputBuffer!!, info)
+                        codec.releaseOutputBuffer(index, false)
+                        if (info.size == null) {
+                            stop()
+                            finishCodecLiveData.postValue(outputFile)
+                        }
+                        offer(index)
+
+                    }
+
+                }
+
+                override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
+                    Log.e(TAG, "codec error")
+                    Log.e("Tanya", Thread.currentThread().name)
+                }
+
+                override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
+                    Log.e(TAG, "codec change")
+                    muxerVideoTrackIndex = mediaMuxer.addTrack(format)
+                    mediaMuxer.start()
                 }
             }
-
-            override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
-                Log.e(TAG, "codec error")
-                Log.e("Tanya", Thread.currentThread().name)
+            encoder.setCallback(listener)
+            awaitClose {
+                encoder.setCallback(null)
             }
-
-            override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
-                Log.e(TAG, "codec change")
-                muxerVideoTrackIndex = mediaMuxer.addTrack(format)
-                mediaMuxer.start()
-            }
-        })
+        }
     }
 
 

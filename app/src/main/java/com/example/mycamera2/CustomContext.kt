@@ -59,19 +59,13 @@ class CustomContext(imageWidth: Int, imageHeight: Int) {
         callbackFlow {
             val listener = OnFrameAvailableListener { surfaceTexture ->
                 launch(Dispatchers.Default) {
-                    Log.e("Tanya", Thread.currentThread().name)
-                    Log.e("Tanya", "decoder")
-                    delay(100)
                     EGLExt.eglPresentationTimeANDROID(
                         mDpy, mSurf,
                         frameTime * 1000
                     )
-                    Log.e("Tanya", Thread.currentThread().name)
-                    Log.e("Tanya", "listener")
                     surfaceTexture.updateTexImage()
                     onDrawFrame()
                     swapSurfaces()
-                    Log.e("Tanya", "listener1")
                     offer(surfaceTexture)
                 }
             }
