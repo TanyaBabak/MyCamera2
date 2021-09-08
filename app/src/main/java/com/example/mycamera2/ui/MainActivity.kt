@@ -1,20 +1,31 @@
 package com.example.mycamera.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
+import android.Manifest.permission.*
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.util.Log
 import android.widget.FrameLayout
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
+import com.example.mycamera2.BuildConfig
 import com.example.mycamera2.R
 import com.example.mycamera2.databinding.ActivityMainBinding
 
-@Suppress("DEPRECATION")
 class MainActivity : AppCompatActivity() {
 
     private lateinit var container: FrameLayout
+    private val requestPermission =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { map ->
+            run {
+                for (entry in map.entries) {
+                    Log.e("Request", "${entry.key} : ${entry.value}")
+                }
+            }
+        }
 
     @RequiresApi(Build.VERSION_CODES.M)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,31 +33,32 @@ class MainActivity : AppCompatActivity() {
         val binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         container = findViewById(R.id.fragment_camera_graph)
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.CAMERA
-            ) != PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE
-            ) != PackageManager.PERMISSION_GRANTED
+        requestPermissionAccess()
+    }
+
+    private fun requestPermissionAccess() {
+        if (shouldShowRequestPermissionRationale(CAMERA) || shouldShowRequestPermissionRationale(
+                WRITE_EXTERNAL_STORAGE
+            ) || shouldShowRequestPermissionRationale(RECORD_AUDIO)
         ) {
-            requestPermissions(
-                arrayOf(
-                    Manifest.permission.RECORD_AUDIO,
-                    Manifest.permission.CAMERA,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                ),
-                REQUEST_CODE
-            )
+            forwardToSettings()
+        } else {
+            requestPermission.launch(arrayOf(CAMERA, RECORD_AUDIO, WRITE_EXTERNAL_STORAGE))
         }
     }
 
-    companion object {
-        const val REQUEST_CODE = 10
+    private fun forwardToSettings() {
+        val intent = Intent().apply {
+            action = Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+            data = Uri.fromParts(PACKAGE, BuildConfig.APPLICATION_ID, null)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        startActivity(intent)
     }
+
+    companion object {
+        private val PACKAGE = "package"
+    }
+
+
 }
