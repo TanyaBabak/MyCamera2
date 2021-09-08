@@ -26,39 +26,42 @@
         <androidx.appcompat.widget.LinearLayoutCompat
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center_vertical"
+            android:layout_gravity="center_vertical|center_horizontal"
             android:orientation="horizontal">
 
             <Button
-                android:id="@+id/record_btn"
+                android:id="@+id/gray_btn"
                 android:layout_width="wrap_content"
                 android:layout_height="50dp"
                 android:layout_marginStart="4dp"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
-                android:text="@string/record_start" />
+                android:layout_marginEnd="16dp"
+                android:backgroundTint="@color/colorGray"
+                android:text="@string/gray" />
 
             <Button
-                android:id="@+id/red_btn"
+                android:id="@+id/negative_btn"
                 android:layout_width="wrap_content"
                 android:layout_height="50dp"
                 android:layout_gravity="center_vertical"
                 android:layout_marginStart="4dp"
-                android:backgroundTint="@color/colorAccent"
+                android:backgroundTint="@color/colorNegative"
                 android:paddingStart="16dp"
+                android:layout_marginEnd="16dp"
                 android:paddingEnd="16dp"
-                android:text="@string/red" />
+                android:text="@string/negative" />
 
             <Button
-                android:id="@+id/green_btn"
+                android:id="@+id/blue_btn"
                 android:layout_width="wrap_content"
                 android:layout_height="50dp"
                 android:layout_gravity="center_vertical"
                 android:layout_marginStart="4dp"
-                android:backgroundTint="@color/colorPrimary"
+                android:backgroundTint="@color/teal_700"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
-                android:text="@string/green" />
+                android:text="@string/blue" />
         </androidx.appcompat.widget.LinearLayoutCompat>
     </FrameLayout>
 

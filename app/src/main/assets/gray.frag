@@ -8,6 +8,7 @@ out vec4 FragColor;
 uniform vec3 uColor;
 
 void main() {
-    vec3 color = texture(sTexture, TexCoord).rgb;
-    FragColor = vec4(1.0 - color.r, 1.0 - color.g, 1.0 - color.b, 1.0);
+    vec3 color = texture(sTexture, TexCoord).rgb * uColor;
+    float gray = (color.r + color.g + color.b) / 3.0;
+    FragColor = vec4(gray, gray, gray, 1.0);
 }

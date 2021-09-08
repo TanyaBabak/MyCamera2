@@ -6,4 +6,6 @@
     <string name="record_stop">Stop record</string>
     <string name="green">Green</string>
     <string name="blue">Blue</string>
+    <string name="gray">Gray</string>
+    <string name="negative">Negative</string>
 </resources>

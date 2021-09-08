@@ -8,6 +8,6 @@ out vec4 FragColor;
 uniform vec3 uColor;
 
 void main() {
-    vec3 color = texture(sTexture, TexCoord).rgb;
+    vec3 color = texture(sTexture, TexCoord).rgb * uColor;
     FragColor = vec4(1.0 - color.r, 1.0 - color.g, 1.0 - color.b, 1.0);
 }
